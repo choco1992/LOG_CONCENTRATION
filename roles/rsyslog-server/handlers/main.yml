@@ -1,0 +1,6 @@
+---
+# handlers file for rsyslog-server
+- name: "Restart rsyslog"
+  service:
+    name: rsyslog
+    state: restarted

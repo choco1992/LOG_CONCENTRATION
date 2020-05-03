@@ -1,0 +1,15 @@
+---
+- name: "Create /var/spool/rsyslog folder"
+  file:
+      path: "/var/spool/rsyslog"
+      state: directory
+      owner: root
+      group: root
+
+- name: "[Rsyslog][CONFIGURATION] Set rsyslog client"
+  vars:
+    concentrator_list: "{{ distant_concentrator }}"
+    concentrated_files: "{{ files_to_concentrate }}"
+  import_role:
+    name: rsyslog-client
+

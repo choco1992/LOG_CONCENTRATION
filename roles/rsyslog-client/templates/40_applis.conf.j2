@@ -1,0 +1,12 @@
+#File delivered buy Ansible
+# We need a block below per file we want to monitor
+{% for file in concentrated_files %}
+
+input(type="imfile"
+File="{{ file.path }}"
+Tag="{{ file.tag }}"
+Facility="uucp"
+reopenOnTruncate="on"
+Severity="notice")
+
+{% endfor %}

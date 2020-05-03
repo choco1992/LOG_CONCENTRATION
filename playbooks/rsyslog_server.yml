@@ -1,0 +1,33 @@
+---
+- name: "[Rsyslog][CONFIGURATION] Set Rsyslog concentrator"
+  vars:
+    vg: "{{ contration_vg }}"
+    name_client: "{{ client_name }}"
+    concentrator_partition_size: "{{ partition_concentrator_size }}"
+  import_role:
+    name: rsyslog-server
+
+- name: "Create /var/spool/rsyslog folder"
+  file:
+      path: "/var/spool/rsyslog"
+      state: directory
+      owner: root
+      group: root
+
+- name: "Setup Log rotation for concentrated files"
+  copy:
+    src: "files/archiver_logs.sh"
+    dest: "/opt/archiver_logs.sh"
+    owner: root
+    group: root
+    mode: 0744
+
+- name: "Create /etc/cron.d/archiverlogs file"
+  copy:
+    content: "# File delivered by ANSIBLE\n# Archivage des logs centralises\n30 00 * * * root /opt/archiver_logs.sh > /dev/null 2>&1\n"
+    dest: "/etc/cron.d/archiverlogs"
+    force: no
+    owner: root
+    group: root
+    mode: 0644
+

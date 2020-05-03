@@ -1,0 +1,15 @@
+{% for remote_concentrator in concentrator_list %}
+
+$ActionSendTCPRebindInterval 1000
+uucp.notice action(type="omfwd" target="{{ remote_concentrator.ip }}" port="5140" protocol="tcp" name="{{ remote_concentrator.name }}"
+        queue.type="LinkedList"
+        queue.filename="{{ remote_concentrator.queue_filename }}"
+        queue.size="10000"
+        queue.maxdiskspace="1g"
+        queue.highwatermark="8000"
+        queue.lowwatermark="2000"
+        queue.discardseverity="7"
+        queue.saveonshutdown="on"
+      )
+
+{% endfor %}

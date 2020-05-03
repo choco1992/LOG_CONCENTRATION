@@ -1,0 +1,12 @@
+###########################################################################################
+### This file is managed by Ansible, Do not edit manually###
+### ###
+###########################################################################################
+## purge_logs Cron Job
+
+
+# Job Definition
+
+5 14 * * * root /bin/find /MIDDLELOGS/* -type f -mtime +7 -exec rm -rf {} \;
+10 14 * * * root /bin/find /MIDDLELOGS/* -empty -type f -mtime +1 -exec rm -rf {} \;
+

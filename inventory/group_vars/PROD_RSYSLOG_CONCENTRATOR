@@ -1,0 +1,7 @@
+contration_vg: vg01
+
+#logs_path : '/MIDDLEDATA/damart/service/global/'
+logstash_host : 'middle-lgs-platform.intcs.meshcore.net'
+logstash_port : '9424'
+
+

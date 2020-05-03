@@ -1,0 +1,639 @@
+---
+- hosts: PROD_BACK
+  become: true
+  roles:
+  - { role : vcluster-partitions, tags: vcluster }
+
+- hosts: tpdamn01z
+  become: true
+  tags: filer_structure
+  tasks:
+  - name: "Mount filer on /MIDDLE_TMP"
+    mount:
+      path: /MIDDLE_TMP/{{ client_name }}
+      src: "{{ nfs_server }}:{{ nfs_path_middle }}"
+      fstype: nfs
+      opts: rw,proto=tcp,nfsvers=3,rsize=32768,wsize=32768
+      state: mounted
+    changed_when: False
+
+  - name: "Mount filer on /WEBS_TMP"
+    mount:
+      path: /WEBS_TMP/{{ client_name }}
+      src: "{{ nfs_server }}:{{ nfs_path_webs }}"
+      fstype: nfs
+      opts: rw,proto=tcp,nfsvers=3,rsize=32768,wsize=32768
+      state: mounted
+    changed_when: False
+
+  - name: "Create directory structure on filer for WEBS"
+    file: 
+      path: /WEBS_TMP/{{ client_name }}/{{ item }}/docs
+      owner: www
+      group: server
+      state: directory
+    with_items:
+      - admin.damart.co.uk
+      - admin.damart.fr
+      - admin.damartusa.com
+      - www.damart.fr
+
+  - name: "Create data on filer for WEBS"
+    file: 
+      path: /WEBS_TMP/{{ client_name }}/data
+      owner: www
+      group: server
+      state: directory
+
+  - name: "Create data on filer for MIDDLE"
+    file: 
+      path: /MIDDLE_TMP/{{ client_name }}/data
+      owner: www
+      group: server
+      state: directory
+ 
+  - name: "Unmount filer on /MIDDLE_TMP"
+    mount:
+      path: /MIDDLE_TMP/{{ client_name }}
+      state: absent
+    changed_when: False
+
+  - name: "Mount filer on /WEBS_TMP"
+    mount:
+      path: /WEBS_TMP/{{ client_name }}
+      state: absent
+    changed_when: False
+
+- hosts: PROD_MIDDLE:&~^t
+  become: true
+  roles:
+  - middle-partitions
+  tasks:
+  - name: "Make sure lvsagent is started"
+    service:
+      name: lvsagent
+      state: started
+
+  - name: "Make sure /MIDDLE is not a mount point"
+    mount:
+      path: /MIDDLE/damart
+      state: absent
+
+  - name: "Mount /WEBS"
+    mount:
+      path: /WEBS/{{ client_name }}/
+      src: "{{ nfs_server }}:{{ nfs_path_webs }}"
+      fstype: nfs
+      opts: rw,proto=tcp,nfsvers=3,rsize=32768,wsize=32768
+      state: mounted
+
+  - name: "Create directory structure for /MIDDLE"
+    file:
+      path: /MIDDLE/{{ client_name }}/{{ item }}
+      state: directory
+      owner: www
+      group: server
+    with_items:
+      - admin.damart.co.uk
+      - admin.damart.fr
+      - admin.damartusa.com
+      - www.damart.fr
+      - ws.damart.fr
+      - ws.damart.co.uk
+      - ws.damartusa.com
+      - integration.damart.fr
+      - integration.damart.co.uk
+      - integration.damartusa.com
+
+  - name: "Mount data filer"
+    mount:
+      path: /MIDDLE/{{ client_name }}/data
+      src: "{{ nfs_server }}:{{ nfs_path_middle }}/data"
+      fstype: nfs
+      opts: rw,proto=tcp,nfsvers=3,rsize=32768,wsize=32768
+      state: mounted
+
+  - name: "Create client directory in logs folder for MIDDLE servers"
+    file:
+      path: /MIDDLELOGS/{{ client_name }}
+      state: directory
+      owner: www
+      group: server
+
+  - name: "Install GPG key for MySQL client"
+    rpm_key:
+      state: present
+      key: http://mirrors.atosworldline.com/external/mysql-5.7/RPM-GPG-KEY-mysql
+      validate_certs: no
+    environment:
+      http_proxy: http://proxy-prod.priv.atos.fr:3128
+
+  - name: "Install necessary packages on MIDDLE servers"
+    yum:
+      name: java-1.8.0-openjdk.x86_64,awl-tomcat8.noarch,servicetools-common.noarch,servicetools-tcollector.noarch,servicetools-tomcat.noarch,mysql-commercial-client,lvsagent
+      enablerepo: awl-main
+      state: installed
+
+- hosts: PROD_MIDDLE:&~^t
+  name: "[MIDDLE] Perform tcollector as servicetools installation (tags: tcollector)"
+  become: true
+  tags: tcollector
+  tasks:
+  - name: "[MIDDLE][tcollector] Install necessary packages for tcollector"
+    yum:
+      name: java-1.8.0-openjdk-devel.x86_64,servicetools-tcollector.noarch,awl-tcollector-tomcat.noarch,awl-tcollector-jstat.noarch
+      enablerepo: awl-main
+      state: installed
+
+  - name: "[MIDDLE][tcollector][awl-proxyTSDB] Ensure awl-proxyTSDB package is on last version"
+    yum:
+      name: awl-proxyTSDB
+      enablerepo: awl-main
+      state: latest
+
+  - name: "[MIDDLE][tocllector] Create directory structure"
+    file:
+      path: "{{ tcollector_path }}/{{ item }}"
+      state: directory
+      owner: www
+      group: server
+    with_items:
+      - etc/plugins
+      - lib
+      - run
+      - servicetools
+
+  - name: "Ensure servicetools directory exists"
+    file:
+      path: /etc/servicetools/services/{{ client_name }}
+      state: directory
+
+  - name: "Install tcollector servicetools"
+    copy:
+      dest: /etc/servicetools/services/{{ client_name }}/tcollector
+      content: tcollector|20|-B {{ tcollector_path }} -v|tcollector|www
+
+  - name: "[MIDDLE][tocllector] Create logs directory"
+    file:
+      path: /MIDDLELOGS/{{ client_name }}/tcollector
+      state: directory
+      owner: www
+      group: server
+
+  - name: "[MIDDLE][tocllector] Symlink logs folder"
+    file:
+      src: /MIDDLELOGS/{{ client_name }}/tcollector
+      dest: /MIDDLE/{{ client_name }}/tcollector/logs
+      state: link
+
+  - name: "[MIDDLE][tocllector] Symlink servicetools file"
+    file:
+      src: /etc/servicetools/services/{{ client_name }}/tcollector
+      dest:  /MIDDLE/{{ client_name }}/tcollector/servicetools/tcollector
+      state: link
+
+  - name: "[MIDDLE][tocllector] Create plugins folder"
+    file:
+      dest: "{{ tcollector_path }}/lib/plugins/{{ item }}"
+      state: directory
+      owner: www
+      group: server
+    with_items:
+      - '0'
+      - 'lib'
+
+  - name: "[MIDDLE][tcollector] Copy plugins file"
+    template:
+      src: templates/{{ item }}
+      dest: "{{ tcollector_path }}/lib/plugins/0/{{ item }}"
+      mode: 0755
+      owner: www
+      group: server
+    with_items:
+      - tomcat.py
+      - jstat.py
+    notify: "Restart tcollector servicetools"
+
+  - name: "[MIDDLE][tcollector] Copy standard tcollector plugins"
+    template:
+      src: templates/{{ item }}
+      dest: "{{ tcollector_path }}/lib/plugins/lib/{{ item }}"
+      mode: 0744
+    with_items:
+      - awlutils.py
+      - utils.py
+    notify: "Restart tcollector servicetools"
+
+  handlers:
+  - name: "Restart tcollector servicetools"
+    service:
+      name: tcollector@tcollector
+      state: restarted
+
+
+- hosts: PROD_FRONT:&~^w
+  become: true
+  roles:
+  - webs-partitions
+  tasks:
+  - name: "Install necessary packages on WEB servers"
+    yum:
+      name: httpd,servicetools-common.noarch,servicetools-tcollector,servicetools-apache,mod_ssl,tomcat-connectors,lvsagent
+      enablerepo: awl-main
+      state: installed
+
+  - name: "Make sure lvsagent is started"
+    service:
+      name: lvsagent
+      state: started
+
+  - name: "Make sure /WEBS is not a mount point"
+    mount:
+      path: /WEBS/damart
+      state: absent
+
+  - name: "Create WEBS folders on host"
+    file:
+      path: /WEBS/{{ client_name }}/{{ item }}
+      state: directory
+      owner: www
+      group: server
+    with_items:
+      - admin.damart.co.uk
+      - admin.damart.fr
+      - admin.damartusa.com
+      - www.damart.fr
+
+  - name: "Mount WEBS folders on host"
+    mount:
+      path: /WEBS/{{ client_name }}/{{ item }}/docs
+      src: "{{ nfs_server }}:{{ nfs_path_webs }}/{{ item }}/docs"
+      fstype: nfs
+      opts: rw,proto=tcp,nfsvers=3,rsize=32768,wsize=32768
+      state: mounted
+    with_items:
+      - admin.damart.co.uk
+      - admin.damart.fr
+      - admin.damartusa.com
+      - www.damart.fr
+
+  - name: "Mount data filer"
+    mount:
+      path: /WEBS/{{ client_name }}/data
+      src: "{{ nfs_server }}:{{ nfs_path_webs }}/data"
+      fstype: nfs
+      opts: rw,proto=tcp,nfsvers=3,rsize=32768,wsize=32768
+      state: mounted
+
+  - name: "Create client directory in logs folder for FRONT servers"
+    file:
+      path: /WEBLOGS/{{ client_name }}
+      state: directory
+      owner: www
+      group: server
+
+  - name: "Create logs directory"
+    file:
+      path: /WEBLOGS/{{ client_name }}/tcollector
+      state: directory
+      owner: www
+      group: server
+
+  - name: "Create directory structure for tcollector"
+    file:
+      path: /WEBS/{{ client_name }}/tcollector/{{ item }}
+      state: directory
+      owner: www
+      group: server
+    with_items:
+      - etc
+      - lib
+      - run
+      - servicetools
+
+  - name: "Install tcollector servicetools"
+    copy:
+      dest: /etc/servicetools/services/tcollector
+      content: tcollector|20|-B /WEBS/damart/tcollector -v|tcollector|www
+
+  - name: "Symlink logs folder"
+    run_once: True
+    file:
+      force: yes
+      src: /WEBLOGS/{{ client_name }}/tcollector
+      dest: /WEBS/{{ client_name }}/tcollector/logs
+      state: link
+
+- hosts: tpdamn03z,tpdamn04z
+  become: true
+  tags: memcached
+  tasks:
+  - name: "Install memcached on tqdamn03s"
+    yum:
+      name: memcached,servicetools-memcached.noarch
+      enablerepo: awl-main
+      state: installed
+
+  - name: "Make sure servicetools folder exists"
+    file:
+      path: /etc/servicetools/services
+      state: directory
+
+  - name: "Servicetools for memcached"
+    copy:
+      dest: /etc/servicetools/services/{{ client_name }}/memcached
+      content: "memcached|30|-p 11211 -u memcached -c 1024 -m 1024 -l 0.0.0.0|root"
+      
+- hosts: ~^lp
+  become: true
+  tasks:
+  - name : "Install nagios plugins"
+    yum:
+      name: nagios-plugins-http
+      enablerepo: epel
+      state: installed
+
+- hosts: wpdamn01z,wpdamn02z
+  name: "[FTP] Install FTP"
+  become: true
+  tags: ftp
+  tasks:
+    - import_tasks: ftp.yml
+  handlers:
+    - name: "Restart vsftpd"
+      service:
+        name: vsftpd
+        state: restarted
+
+- hosts: wpdamn01z,wpdamn02z
+  name: "[SFTP] Install SFTP"
+  become: true
+  tags: sftp
+  tasks:
+    - import_tasks: sftp.yml
+
+- hosts: PROD_RSYSLOG_CONCENTRATOR
+  name: "[ LOG CONCENTRATOR ] Set up a log concentrator via rsyslog"
+  become: true
+  tags: log_concentrator
+  tasks:
+    - import_tasks: rsyslog_server.yml
+
+- hosts: PROD_RSYSLOG_CLIENT
+  name: "[ LOG CONCENTRATOR ] Set up rsyslog  client to send log to concentrator"
+  become: true
+  tags: log_concentrator
+  tasks:
+    - import_tasks: rsyslog_client.yml
+
+
+- hosts: PROD_FRONT:&~^w
+  name: "[FRONT] Perform tcollector as servicetools installation (tags: tcollector)"
+  become: true
+  tags: tcollector
+  tasks:
+  - name: "[FRONT][tcollector] Install necessary packages for tcollector"
+    yum:
+      name: servicetools-tcollector.noarch,awl-tcollector-system.noarch,awl-tcollector-network.noarch,awl-tcollector.noarch,awl-tcollector-httpd.noarch
+      enablerepo: awl-main
+      state: installed
+
+  - name: "[FRONT][tcollector][awl-proxyTSDB] Ensure awl-proxyTSDB package is on last version"
+    yum:
+      name: awl-proxyTSDB
+      enablerepo: awl-main
+      state: latest
+
+
+  - name: "[FRONT][tocllector] Create directory structure"
+    file:
+      path: "{{ tcollector_path }}/{{ item }}"
+      state: directory
+      owner: www
+      group: server
+    with_items:
+      - etc/plugins
+      - lib
+      - run
+      - servicetools
+
+  - name: "Install tcollector servicetools"
+    copy:
+      dest: /etc/servicetools/services/{{ client_name }}/tcollector
+      content: tcollector|20|-B {{ tcollector_path }} -v|tcollector|www
+
+  - name: "[FRONT][tocllector] Create logs directory"
+    file:
+      path: /WEBLOGS/{{ client_name }}/tcollector
+      state: directory
+      owner: www
+      group: server
+
+  - name: "[FRONT][tocllector] Symlink logs folder"
+    file:
+      src: /WEBLOGS/{{ client_name }}/tcollector
+      dest: /WEBS/{{ client_name }}/tcollector/logs
+      state: link
+
+  - name: "[FRONT][tocllector] Symlink servicetools file"
+    file:
+      src: /etc/servicetools/services/{{ client_name }}/tcollector
+      dest:  /WEBS/{{ client_name }}/tcollector/servicetools/tcollector
+      state: link
+
+  - name: "[FRONT][tocllector] Create plugins folder"
+    file:
+      dest: "{{ tcollector_path }}/lib/plugins/{{ item }}"
+      state: directory
+      owner: www
+      group: server
+    with_items:
+      - '0'
+      - 'lib'
+
+  - name: "[FRONT][tcollector] Copy plugins file"
+    template:
+      src: templates/{{ item }}
+      dest: "{{ tcollector_path }}/lib/plugins/0/{{ item }}"
+      mode: 0755
+      owner: www
+      group: server
+    with_items:
+      - system.py
+      - network.py
+      - httpd.py
+    notify: "Restart tcollector servicetools"
+
+  - name: "[FRONT][tcollector] Copy standard tcollector plugins"
+    template:
+      src: templates/{{ item }}
+      dest: "{{ tcollector_path }}/lib/plugins/lib/{{ item }}"
+      mode: 0744
+    with_items:
+      - awlutils.py
+      - utils.py
+    notify: "Restart tcollector servicetools"
+
+  - name: "[FRONT][tcollector] Copy tcollector standard conf file"
+    copy:
+      src: files/{{ item }}
+      dest: "{{ tcollector_path }}/etc/{{ item }}"
+      mode: 0644
+      owner: www
+      group: server
+    with_items:
+      - tcollector.conf_standard
+    notify: "Restart tcollector servicetools"
+
+  - name: "[FRONT][tcollector] Copy tcollector plugin standard conf file"
+    copy:
+      src: files/{{ item }}
+      dest: "{{ tcollector_path }}/etc/plugins/{{ item }}"
+      mode: 0644
+      owner: www
+      group: server
+    with_items:
+      - httpd.conf_tcollector_plugin_standard
+    notify: "Restart tcollector servicetools"
+
+  handlers:
+  - name: "Restart tcollector servicetools"
+    service:
+      name: tcollector@tcollector
+      state: restarted
+
+- hosts: PROD_FRONT:&~^w
+  name: "[FRONT] Customise /etc/rc.d/rc.local to ensure that all servicestools and squid  are started after reboot(tags: rc_local)"
+  become: true
+  tags: rc_local
+  tasks:
+  - name: "Deliver new /etc/rc.d/rc.local file"
+    copy:
+      src: files/rc.local.front
+      dest: "/etc/rc.d/rc.local"
+      mode: 0744
+      owner: root
+      group: root
+
+  - name: "Deliver /opt/restart_all_service_after_reboot file for rc.local customisation"
+    copy:
+      src: files/restart_all_service_after_reboot_front
+      dest: "/opt/restart_all_service_after_reboot"
+      mode: 0744
+      owner: root
+      group: root
+
+- hosts: PROD
+  name: "[PROD] [RSYSLOG] Update Rsyslog to have wildcard option"
+  become: true
+  tags: update_rsyslog_package
+  tasks:
+  - name: "[RSYSLOG] Download rsyslog repositories"
+    shell: "cd /etc/yum.repos.d/ ; export http_proxy=http://proxy-prod.priv.atos.fr:3128 ; export https_proxy=http://proxy-prod.priv.atos.fr:3128 ; wget http://rpms.adiscon.com/v8-stable/rsyslog.repo ; "
+
+  - name: "[RSYSLOG] Update rsyslog package"
+    yum:
+      name: rsyslog-8.29.0-1.el7.x86_64
+      enablerepo: rsyslog_v8
+      state: installed
+
+  - name: "[RSYSLOG] Remove rsyslog repositories"
+    file:
+      path: /etc/yum.repos.d/rsyslog.repo
+      state: absent
+
+  - name: "[RSYSLOG] Ensure  rsyslog is started"
+    service:
+      name: rsyslog
+      state: started
+ 
+
+- hosts: PROD
+  name: "[PROD] Install Atop and Hatop package"
+  become: true
+  tags: atop_hatop
+  tasks:
+  - import_tasks: install_atop_hatop.yml
+  handlers:
+    - name: "Restart atop"
+      service:
+        name: atop
+        state: restarted
+
+
+- hosts: PROD
+  name: "[PROD] switch watchdog collector to PROD"
+  become: true
+  tags: set_watchdog_collector_to_prod
+  tasks:
+  - import_tasks: set_watchdog_collector_to_prod.yml
+  - name: "set watchdog alerts to remote"
+    shell : "/bin/wat  -remote; " 
+
+- hosts: PROD:&~^[t;w]
+  name: "[PROD] Customise  root crontab for specific demand like sd 2795872"
+  become: true
+  tags: root_crontab
+  tasks:
+  - import_tasks: customise_root_crontab.yml
+
+- hosts: PROD:&~^[t]
+  name: "[PROD] Purge Middlelogs beacause of many incident like 2849530 "
+  become: true
+  tags: purge_middlelogs
+  tasks:
+  - import_tasks: purge_middlelogs.yml
+
+- hosts: wpdamn01z,wpdamn02z
+  name: "[FRONT] customise logrotate files"
+  become: true
+  tags: logrotate
+  tasks:
+  - name: "Deliver new /etc/logrotate.d/squid  file"
+    copy:
+      src: files/logrotate_squid
+      dest: "/etc/logrotate.d/squid"
+      owner: root
+      group: root
+      mode: 0644
+
+- hosts: PROD_RSYSLOG_CONCENTRATOR
+  name: "[ Filebeat/ELK ] Send log to ELK"
+  become: true
+  tags: filebeat
+  tasks:
+    - import_tasks: install_filebeat.yml
+  handlers:
+    - name: restart filebeat
+      service:
+        name: filebeat
+        state: restarted
+
+- hosts: wpdamn01z,wpdamn02z
+  name: "[FRONT] Add squid survbatch"
+  become: true
+  tags: watchdog
+  tasks:
+  - import_tasks: survbatch.yml
+  handlers:
+    - name: "Restart watchdog"
+      shell: "wat -stop ;  wat -start"
+
+- hosts: wpdamn01z,wpdamn02z
+  name: "[FRONT] Setup envoi_logs to send log to tstat servers"
+  become: true
+  tags: envoi_logs
+  tasks:
+  - import_tasks: install_envoi_logs.yml
+
+- hosts: PROD_BACK
+  name: "Install mysql-utilities package" 
+  become: true
+  tags: mysql_utilities
+  tasks:
+  - name: "Install mysql-utilities and dependency mysql-connector-python package"
+    yum:
+      name: mysql-utilities,mysql-connector-python
+      enablerepo: mysqltoolscommunity,mysqlconnectorscommunity
+      state: installed
+

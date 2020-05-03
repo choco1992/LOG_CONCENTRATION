@@ -1,0 +1,43 @@
+---
+- name: "Enable ElasticSearch repository"
+  yum_repository:
+     name: "elasticsearch"
+     description : Elastic repository for 5.x packages
+     baseurl: https://artifacts.elastic.co/packages/5.x/yum
+     gpgkey: https://artifacts.elastic.co/GPG-KEY-elasticsearch 
+     gpgcheck: yes
+     proxy: https://proxy-prod-scl.svc.meshcore.net:3128
+     enabled: no
+     state: present
+
+- name: "Install FileBeat"
+  yum:
+     name: filebeat-5.5.3-1.x86_64
+     enablerepo: elasticsearch
+     state: present
+
+- name: "Push configuration"
+  template:
+     src: templates/filebeat.yml.j2
+     dest: /etc/filebeat/filebeat.yml
+     backup: yes
+  notify:
+    - restart filebeat
+
+- name: "Ensure filebeat service is enabled and started"
+  service:
+    name: filebeat
+    enabled: yes
+    state: started
+
+- name: "Test the remote logstash is available"
+  wait_for:
+    host: "{{ logstash_host }}"
+    port: "{{ logstash_port }}"
+
+#handlers:
+#- name: restart filebeat 
+#  service:
+#    name: filebeat
+#    state: restarted
+

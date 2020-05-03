@@ -1,0 +1,59 @@
+######################### Filebeat Configuration #############################
+
+#=========================== Filebeat prospectors =============================
+
+# Sets log level. The default log level is info.
+# Available log levels are: critical, error, warning, info, debug
+logging.level: info
+logging.to_files: true
+logging.files:
+  path: /var/log/filebeat
+  name:
+  keepfiles: 7
+  permissions: 0644
+
+filebeat.prospectors:
+
+  # Paths that should be crawled and fetched. Glob based paths.
+{% for file in files_to_send_to_logstash %}
+#{{ file.tag }}
+- type: log
+  paths: [ "{{ file.logs_path }}" ]
+  exclude_files: [".gz$"]
+  tail_files: true
+
+{% endfor %}
+   
+  # Exclude lines. A list of regular expressions to match. It drops the lines that are
+  # matching any regular expression from the list.
+  #exclude_lines: ["^DBG"]
+
+  # Include lines. A list of regular expressions to match. It exports the lines that are
+  # matching any regular expression from the list.
+  #include_lines: ["^ERR", "^WARN"]
+
+  # Exclude files. A list of regular expressions to match. Filebeat drops the files that
+  # are matching any regular expression from the list. By default, no files are dropped.
+  #exclude_files: [".gz$"]
+
+  # Optional additional fields. These field can be freely picked
+  # to add additional information to the crawled log files for filtering
+  #fields:
+  #  level: debug
+  #  review: 1
+
+#----------------------------- Logstash output --------------------------------
+output.logstash:
+  # The Logstash hosts
+  hosts: ["{{ logstash_host }}:{{ logstash_port }}"]
+
+#----------------------------- Redis output --------------------------------
+#output.redis:
+#  hosts: ["10.26.237.88:9400"]
+#  key: "filebeat"
+#  db: 0
+#  timeout: 5
+
+#================================ Logging =====================================
+
+

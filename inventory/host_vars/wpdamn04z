@@ -1,0 +1,13 @@
+ip1: 10.130.64.21
+ip2: 10.131.64.21
+ip1_backup: 10.128.70.21
+ip2_backup: 10.129.70.21
+
+partition_concentrator_size: 118g
+
+files_to_send_to_logstash:
+  - { logs_path: "/CONCENTRATION/HOSTS/wpdamn*z/*/www-damart-fr", tag: "www-damart-fr" }
+  - { logs_path: "/CONCENTRATION/HOSTS/wpdamn*z/*/admin.damart.fr", tag: "admin.damart.fr" }
+  - { logs_path: "/CONCENTRATION/HOSTS/wpdamn*z/*/admin.damartusa.com", tag: "admin.damartusa.com" }
+  - { logs_path: "/CONCENTRATION/HOSTS/wpdamn*z/*/admin.damart.co.uk", tag: "admin.damart.co.uk" }
+

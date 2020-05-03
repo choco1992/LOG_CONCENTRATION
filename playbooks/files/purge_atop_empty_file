@@ -1,0 +1,2 @@
+05 15 * * * root /bin/find /var/log/atop/* -empty -type f -mtime +1 -exec rm -rf {} \;
+

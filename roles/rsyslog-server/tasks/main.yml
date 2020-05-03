@@ -1,0 +1,45 @@
+---
+# tasks file for rsyslog-server
+- name: "Create lv for concentration"
+  lvol:
+    vg: "{{ vg }}"
+    lv: concentration
+    size: "{{ concentrator_partition_size }}"
+
+- name: "concentration is ext4 partition"
+  filesystem:
+    fstype: ext4
+    dev: /dev/{{ vg }}/concentration
+
+- name: "Concentration is mounted"
+  mount:
+    path: /CONCENTRATION
+    src: /dev/{{ vg }}/concentration
+    opts: "defaults,nodev,nosuid"
+    dump: 1
+    passno: 2
+    fstype: ext4
+    state: mounted
+
+- name: "Push module configuration"
+  copy:
+    src: files/00_modules.conf
+    dest: /etc/rsyslog.d/00_modules.conf
+  notify: "Restart rsyslog"
+
+- name: "Push global configuration"
+  copy:
+    src: files/20_global.conf
+    dest: /etc/rsyslog.d/20_global.conf
+  notify: "Restart rsyslog"
+
+- name: "Push rsyslog server configuration"
+  copy:
+    src: files/60_server.conf
+    dest: /etc/rsyslog.d/60_server.conf
+  notify: "Restart rsyslog"
+
+- name: "Ensure rsyslog is started"
+  service:
+    name: rsyslog
+    state: started
